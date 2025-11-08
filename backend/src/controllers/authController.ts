@@ -19,21 +19,20 @@ export const register = async (req: Request, res: Response) => {
   session.startTransaction();
 
   try {
-    const { name, email, password } = req.body as {
-      name?: string;
-      email?: string;
-      password?: string;
-    };
+    const body = req.body as { name?: string; email?: string; password?: string };
 
-    // ?r=CODE (normalize to string | null, never undefined)
+    // normalize referral code from query (?r=CODE)
     const referredByQuery: string | null =
       typeof req.query.r === "string" ? req.query.r : null;
 
-    if (!name || !email || !password) {
-      return res
-        .status(400)
-        .json({ error: "Name, email, and password required" });
+    if (!body.name || !body.email || !body.password) {
+      return res.status(400).json({ error: "Name, email, and password required" });
     }
+
+    // explicit narrow to satisfy TS strict
+    const name: string = body.name;
+    const email: string = body.email;
+    const password: string = body.password;
 
     // check if user already exists
     const exists = await User.findOne({ email }).session(session);
@@ -43,11 +42,9 @@ export const register = async (req: Request, res: Response) => {
 
     // hash password and generate referral code
     const passwordHash: string = await bcrypt.hash(password, 10);
-    const referralCode: string = generateReferralCode(
-      String(name || email || "user")
-    );
+    const referralCode: string = generateReferralCode(name || email || "user");
 
-    // getClientIp can be null; store as null explicitly
+    // normalize IP to string|null
     const signupIp: string | null = getClientIp(req) ?? null;
 
     // create user
@@ -58,8 +55,8 @@ export const register = async (req: Request, res: Response) => {
           email,
           passwordHash,
           referralCode,
-          signupIp, // string | null matches schema
-          referredBy: referredByQuery, // string | null matches schema
+          signupIp,
+          referredBy: referredByQuery, // string|null
         },
       ],
       { session }
@@ -67,10 +64,7 @@ export const register = async (req: Request, res: Response) => {
 
     // handle referral if exists
     if (referredByQuery) {
-      const referrer = await User.findOne({
-        referralCode: referredByQuery,
-      }).session(session);
-
+      const referrer = await User.findOne({ referralCode: referredByQuery }).session(session);
       if (referrer && String(referrer._id) !== String(userDocs[0]._id)) {
         await Referral.create(
           [
@@ -82,10 +76,7 @@ export const register = async (req: Request, res: Response) => {
           ],
           { session }
         ).catch(() => {});
-
-        console.log(
-          `🎁 Referral recorded: ${referrer.name} → ${userDocs[0].name}`
-        );
+        console.log(`🎁 Referral recorded: ${referrer.name} → ${userDocs[0].name}`);
       } else {
         console.log("⚠️ Invalid or self-referral skipped");
       }
@@ -108,10 +99,11 @@ export const register = async (req: Request, res: Response) => {
   } catch (e: any) {
     await session.abortTransaction();
     console.error("Registration error:", e?.message || e);
-    if (e?.code === 11000)
+    if (e?.code === 11000) {
       return res
         .status(409)
         .json({ error: "Duplicate key (email/referralCode)" });
+    }
     return res.status(500).json({ error: e?.message || "Server error" });
   } finally {
     session.endSession();
@@ -120,13 +112,15 @@ export const register = async (req: Request, res: Response) => {
 
 /** ---------- LOGIN USER ---------- */
 export const login = async (req: Request, res: Response) => {
-  const { email, password } = req.body as {
-    email?: string;
-    password?: string;
-  };
+  const body = req.body as { email?: string; password?: string };
 
-  if (!email || !password)
+  if (!body.email || !body.password) {
     return res.status(400).json({ error: "Email and password required" });
+  }
+
+  // explicit narrow for TS
+  const email: string = body.email;
+  const password: string = body.password;
 
   const user = await User.findOne({ email });
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
