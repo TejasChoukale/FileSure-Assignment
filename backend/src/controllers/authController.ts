@@ -22,17 +22,20 @@ export const register = async (req: Request, res: Response) => {
     const body = req.body as { name?: string; email?: string; password?: string };
 
     // normalize referral code from query (?r=CODE)
+    const referredByQueryRaw = req.query?.r;
     const referredByQuery: string | null =
-      typeof req.query.r === "string" ? req.query.r : null;
+      typeof referredByQueryRaw === "string" && referredByQueryRaw.length > 0
+        ? referredByQueryRaw
+        : null;
 
-    if (!body.name || !body.email || !body.password) {
+    if (!body?.name || !body?.email || !body?.password) {
       return res.status(400).json({ error: "Name, email, and password required" });
     }
 
     // explicit narrow to satisfy TS strict
-    const name: string = body.name;
-    const email: string = body.email;
-    const password: string = body.password;
+    const name = String(body.name);
+    const email = String(body.email);
+    const password = String(body.password);
 
     // check if user already exists
     const exists = await User.findOne({ email }).session(session);
@@ -40,7 +43,7 @@ export const register = async (req: Request, res: Response) => {
       return res.status(409).json({ error: "Email already registered" });
     }
 
-    // hash password and generate referral code
+    // hash password and generate referral code (fully narrowed + cast)
     const passwordHash: string = await bcrypt.hash(password, 10);
     const referralCode: string = generateReferralCode(name || email || "user");
 
@@ -48,21 +51,28 @@ export const register = async (req: Request, res: Response) => {
     const signupIp: string | null = getClientIp(req) ?? null;
 
     // ✅ Build create doc without referredBy unless it’s a non-empty string
-    const createDoc: any = {
+    const createDoc: {
+      name: string;
+      email: string;
+      passwordHash: string;
+      referralCode: string;
+      signupIp: string | null;
+      referredBy?: string; // optional (only set when present)
+    } = {
       name,
       email,
       passwordHash,
       referralCode,
       signupIp,
     };
-    if (typeof referredByQuery === "string" && referredByQuery.length > 0) {
-      createDoc.referredBy = referredByQuery;
+    if (referredByQuery) {
+      createDoc.referredBy = referredByQuery as string; // force present-only
     }
 
     const userDocs = (await User.create([createDoc], { session })) as any[];
 
     // Handle referral if exists
-    if (typeof referredByQuery === "string" && referredByQuery.length > 0) {
+    if (referredByQuery) {
       const referrer = await User.findOne({ referralCode: referredByQuery }).session(session);
       if (referrer && String(referrer._id) !== String(userDocs[0]._id)) {
         await Referral.create(
@@ -105,13 +115,13 @@ export const register = async (req: Request, res: Response) => {
 export const login = async (req: Request, res: Response) => {
   const body = req.body as { email?: string; password?: string };
 
-  if (!body.email || !body.password) {
+  if (!body?.email || !body?.password) {
     return res.status(400).json({ error: "Email and password required" });
   }
 
   // explicit narrow for TS
-  const email: string = body.email;
-  const password: string = body.password;
+  const email = String(body.email);
+  const password = String(body.password);
 
   const user = await User.findOne({ email });
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
