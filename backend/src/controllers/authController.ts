@@ -47,33 +47,26 @@ export const register = async (req: Request, res: Response) => {
     // normalize IP to string|null
     const signupIp: string | null = getClientIp(req) ?? null;
 
-    // create user
-    const userDocs = (await User.create(
-      [
-        {
-          name,
-          email,
-          passwordHash,
-          referralCode,
-          signupIp,
-          referredBy: referredByQuery, // string|null
-        },
-      ],
-      { session }
-    )) as any[];
+    // ✅ Build create doc without referredBy unless it’s a non-empty string
+    const createDoc: any = {
+      name,
+      email,
+      passwordHash,
+      referralCode,
+      signupIp,
+    };
+    if (typeof referredByQuery === "string" && referredByQuery.length > 0) {
+      createDoc.referredBy = referredByQuery;
+    }
 
-    // handle referral if exists
-    if (referredByQuery) {
+    const userDocs = (await User.create([createDoc], { session })) as any[];
+
+    // Handle referral if exists
+    if (typeof referredByQuery === "string" && referredByQuery.length > 0) {
       const referrer = await User.findOne({ referralCode: referredByQuery }).session(session);
       if (referrer && String(referrer._id) !== String(userDocs[0]._id)) {
         await Referral.create(
-          [
-            {
-              referrerId: referrer._id,
-              referredId: userDocs[0]._id,
-              status: "pending",
-            },
-          ],
+          [{ referrerId: referrer._id, referredId: userDocs[0]._id, status: "pending" }],
           { session }
         ).catch(() => {});
         console.log(`🎁 Referral recorded: ${referrer.name} → ${userDocs[0].name}`);
@@ -100,9 +93,7 @@ export const register = async (req: Request, res: Response) => {
     await session.abortTransaction();
     console.error("Registration error:", e?.message || e);
     if (e?.code === 11000) {
-      return res
-        .status(409)
-        .json({ error: "Duplicate key (email/referralCode)" });
+      return res.status(409).json({ error: "Duplicate key (email/referralCode)" });
     }
     return res.status(500).json({ error: e?.message || "Server error" });
   } finally {
