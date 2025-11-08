@@ -7,9 +7,9 @@ import Referral from "../models/Referral";
 import { getClientIp } from "../utils/getClientIp";
 import { generateReferralCode } from "../utils/generateReferralCode";
 
-/** ---------- JWT TOKEN HELPER ---------- */
+/** ---------- JWT TOKEN HELPER (no null) ---------- */
 function signToken(userId: string) {
-  const secret = process.env.JWT_SECRET || "dev_secret"; // fallback for safety
+  const secret: string = process.env.JWT_SECRET ?? "dev_secret";
   return jwt.sign({ id: userId }, secret, { expiresIn: "7d" });
 }
 
@@ -19,52 +19,73 @@ export const register = async (req: Request, res: Response) => {
   session.startTransaction();
 
   try {
-    const { name, email, password } = req.body;
-    const referredByQuery = (req.query.r as string) || null; // ?r=CODE
+    const { name, email, password } = req.body as {
+      name?: string;
+      email?: string;
+      password?: string;
+    };
+
+    // ?r=CODE (normalize to string | null, never undefined)
+    const referredByQuery: string | null =
+      typeof req.query.r === "string" ? req.query.r : null;
 
     if (!name || !email || !password) {
-      return res.status(400).json({ error: "Name, email, and password required" });
+      return res
+        .status(400)
+        .json({ error: "Name, email, and password required" });
     }
 
-    // Check if user already exists
+    // check if user already exists
     const exists = await User.findOne({ email }).session(session);
     if (exists) {
       return res.status(409).json({ error: "Email already registered" });
     }
 
-    // Hash password and generate referral code
-    const passwordHash = await bcrypt.hash(password, 10);
-    const referralCode = generateReferralCode(String(name || email || "user"));
-    const signupIp = getClientIp(req);
+    // hash password and generate referral code
+    const passwordHash: string = await bcrypt.hash(password, 10);
+    const referralCode: string = generateReferralCode(
+      String(name || email || "user")
+    );
 
-    // ✅ Create a new user (strongly typed, no TS undefined issue)
-    const newUser = new User({
-      name,
-      email,
-      passwordHash,
-      referralCode,
-      signupIp,
-      referredBy: referredByQuery || null,
-    });
+    // getClientIp can be null; store as null explicitly
+    const signupIp: string | null = getClientIp(req) ?? null;
 
-    await newUser.save({ session });
+    // create user
+    const userDocs = (await User.create(
+      [
+        {
+          name,
+          email,
+          passwordHash,
+          referralCode,
+          signupIp, // string | null matches schema
+          referredBy: referredByQuery, // string | null matches schema
+        },
+      ],
+      { session }
+    )) as any[];
 
-    // Handle referral if exists
+    // handle referral if exists
     if (referredByQuery) {
-      const referrer = await User.findOne({ referralCode: referredByQuery }).session(session);
-      if (referrer && String(referrer._id) !== String(newUser._id)) {
+      const referrer = await User.findOne({
+        referralCode: referredByQuery,
+      }).session(session);
+
+      if (referrer && String(referrer._id) !== String(userDocs[0]._id)) {
         await Referral.create(
           [
             {
               referrerId: referrer._id,
-              referredId: newUser._id,
+              referredId: userDocs[0]._id,
               status: "pending",
             },
           ],
           { session }
         ).catch(() => {});
 
-        console.log(`🎁 Referral recorded: ${referrer.name} → ${newUser.name}`);
+        console.log(
+          `🎁 Referral recorded: ${referrer.name} → ${userDocs[0].name}`
+        );
       } else {
         console.log("⚠️ Invalid or self-referral skipped");
       }
@@ -72,23 +93,25 @@ export const register = async (req: Request, res: Response) => {
 
     await session.commitTransaction();
 
-    // ✅ Generate JWT (no undefined risk)
-    const token = signToken(newUser._id.toString());
+    // generate JWT
+    const token = signToken(String(userDocs[0]._id));
 
     return res.status(201).json({
       token,
       user: {
-        id: newUser._id,
-        name: newUser.name,
-        email: newUser.email,
-        referralCode: newUser.referralCode,
+        id: userDocs[0]._id,
+        name: userDocs[0].name,
+        email: userDocs[0].email,
+        referralCode: userDocs[0].referralCode,
       },
     });
   } catch (e: any) {
     await session.abortTransaction();
-    console.error("Registration error:", e.message);
+    console.error("Registration error:", e?.message || e);
     if (e?.code === 11000)
-      return res.status(409).json({ error: "Duplicate key (email/referralCode)" });
+      return res
+        .status(409)
+        .json({ error: "Duplicate key (email/referralCode)" });
     return res.status(500).json({ error: e?.message || "Server error" });
   } finally {
     session.endSession();
@@ -97,7 +120,11 @@ export const register = async (req: Request, res: Response) => {
 
 /** ---------- LOGIN USER ---------- */
 export const login = async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body as {
+    email?: string;
+    password?: string;
+  };
+
   if (!email || !password)
     return res.status(400).json({ error: "Email and password required" });
 
@@ -107,7 +134,7 @@ export const login = async (req: Request, res: Response) => {
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ error: "Invalid credentials" });
 
-  const token = signToken(user._id.toString());
+  const token = signToken(String(user._id));
   return res.json({
     token,
     user: {
