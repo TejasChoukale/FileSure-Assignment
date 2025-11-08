@@ -7,38 +7,38 @@ import Referral from "../models/Referral";
 import { getClientIp } from "../utils/getClientIp";
 import { generateReferralCode } from "../utils/generateReferralCode";
 
-/** here it;s like sign JWT token */
+/** ---------- JWT TOKEN HELPER ---------- */
 function signToken(userId: string) {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET as string, {
-    expiresIn: "7d",
-  });
+  const secret = process.env.JWT_SECRET || "dev_secret"; // fallback for safety
+  return jwt.sign({ id: userId }, secret, { expiresIn: "7d" });
 }
 
-/** here we will REGISTER USER */
+/** ---------- REGISTER USER ---------- */
 export const register = async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
     const { name, email, password } = req.body;
-    const referredByQuery = (req.query.r as string) || null; // <-- get ?r=CODE
+    const referredByQuery = (req.query.r as string) || null; // ?r=CODE
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: "Name, email, and password required" });
     }
 
-    // to check if user already exists
+    // check if user already exists
     const exists = await User.findOne({ email }).session(session);
     if (exists) {
       return res.status(409).json({ error: "Email already registered" });
     }
 
+    // hash password and generate referral code
     const passwordHash = await bcrypt.hash(password, 10);
     const referralCode = generateReferralCode(String(name || email || "user"));
     const signupIp = getClientIp(req);
 
-    // here we will create new user
-    const user = await User.create(
+    // create user (force-cast type to avoid TS inference bug)
+    const userDocs = (await User.create(
       [
         {
           name,
@@ -50,24 +50,24 @@ export const register = async (req: Request, res: Response) => {
         },
       ],
       { session }
-    );
+    )) as any[];
 
-    //  Handle referral if exists
+    // handle referral if exists
     if (referredByQuery) {
       const referrer = await User.findOne({ referralCode: referredByQuery }).session(session);
-      if (referrer && String(referrer._id) !== String(user[0]._id)) {
+      if (referrer && String(referrer._id) !== String(userDocs[0]._id)) {
         await Referral.create(
           [
             {
               referrerId: referrer._id,
-              referredId: user[0]._id,
+              referredId: userDocs[0]._id,
               status: "pending",
             },
           ],
           { session }
         ).catch(() => {});
 
-        console.log(`🎁 Referral recorded: ${referrer.name} → ${user[0].name}`);
+        console.log(`🎁 Referral recorded: ${referrer.name} → ${userDocs[0].name}`);
       } else {
         console.log("⚠️ Invalid or self-referral skipped");
       }
@@ -75,20 +75,21 @@ export const register = async (req: Request, res: Response) => {
 
     await session.commitTransaction();
 
-    const token = signToken(String(user[0]!._id));
+    // generate JWT
+    const token = signToken(String(userDocs[0]._id));
 
     return res.status(201).json({
       token,
       user: {
-        id: user[0]._id,
-        name: user[0].name,
-        email: user[0].email,
-        referralCode: user[0].referralCode,
+        id: userDocs[0]._id,
+        name: userDocs[0].name,
+        email: userDocs[0].email,
+        referralCode: userDocs[0].referralCode,
       },
     });
   } catch (e: any) {
     await session.abortTransaction();
-    console.error(" Registration error:", e.message);
+    console.error("Registration error:", e.message);
     if (e?.code === 11000)
       return res.status(409).json({ error: "Duplicate key (email/referralCode)" });
     return res.status(500).json({ error: e?.message || "Server error" });
@@ -97,7 +98,7 @@ export const register = async (req: Request, res: Response) => {
   }
 };
 
-/** here i will LOGIN USER */
+/** ---------- LOGIN USER ---------- */
 export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
   if (!email || !password)
@@ -121,7 +122,7 @@ export const login = async (req: Request, res: Response) => {
   });
 };
 
-/** CURRENT USER INFO (for /me) */
+/** ---------- CURRENT USER INFO ---------- */
 export const me = async (req: Request, res: Response) => {
   const u = (req as any).user; // set by protect middleware
   return res.json({
