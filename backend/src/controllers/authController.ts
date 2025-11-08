@@ -75,7 +75,7 @@ export const register = async (req: Request, res: Response) => {
 
     await session.commitTransaction();
 
-    const token = signToken(String(user[0]._id));
+    const token = signToken(String(user?.[0]?._id || ""));
     return res.status(201).json({
       token,
       user: {
