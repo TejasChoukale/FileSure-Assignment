@@ -21,7 +21,7 @@ export const protect = async (req: Request, res: Response, next: NextFunction) =
       return res.status(401).json({ error: "User not found" });
     }
 
-    (req as any).user = user; // ✅ This line is what was missing
+    (req as any).user = user; //  This line is what was missing , had so trouble debugging this issue hashh,
 
     next();
   } catch (error) {

@@ -34,7 +34,7 @@ export const register = async (req: Request, res: Response) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const referralCode = generateReferralCode(name || email);
+    const referralCode = generateReferralCode(String(name || email || "user"));
     const signupIp = getClientIp(req);
 
     // here we will create new user
