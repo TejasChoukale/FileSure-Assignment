@@ -145,7 +145,7 @@ export const login = async (req: Request, res: Response) => {
 export const me = async (req: Request, res: Response) => {
   const u = (req as any).user; // set by protect middleware
   return res.json({
-    id: u._id,
+    id: String(u._id),
     email: u.email,
     referralCode: u.referralCode,
   });
