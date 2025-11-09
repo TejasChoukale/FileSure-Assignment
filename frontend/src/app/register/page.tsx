@@ -1,14 +1,11 @@
-// Tell Next.js: do NOT prerender this page at build time
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 "use client";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 const API = process.env.NEXT_PUBLIC_API || "http://localhost:5000";
 
-export default function Register() {
+// Separate the component that uses useSearchParams
+function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const ref = searchParams.get("r"); // e.g. ?r=TEJAS-XXXX
@@ -108,5 +105,18 @@ export default function Register() {
         </p>
       </form>
     </main>
+  );
+}
+
+// Main component wrapped with Suspense
+export default function Register() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    }>
+      <RegisterForm />
+    </Suspense>
   );
 }
