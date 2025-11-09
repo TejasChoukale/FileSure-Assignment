@@ -1,20 +1,24 @@
 "use client";
-import { useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 const API = process.env.NEXT_PUBLIC_API || "http://localhost:5000";
 
-// Separate the component that uses useSearchParams
-function RegisterForm() {
+export default function Register() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const ref = searchParams.get("r"); // e.g. ?r=TEJAS-XXXX
-
+  const [ref, setRef] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Get referral code from URL on client side
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const referralCode = params.get("r");
+    setRef(referralCode);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,7 +26,6 @@ function RegisterForm() {
     setLoading(true);
 
     try {
-      // always include ?r= (encode to be safe)
       const url = `${API}/api/auth/register?r=${encodeURIComponent(ref || "")}`;
       const res = await fetch(url, {
         method: "POST",
@@ -105,18 +108,5 @@ function RegisterForm() {
         </p>
       </form>
     </main>
-  );
-}
-
-// Main component wrapped with Suspense
-export default function Register() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
-      </div>
-    }>
-      <RegisterForm />
-    </Suspense>
   );
 }
