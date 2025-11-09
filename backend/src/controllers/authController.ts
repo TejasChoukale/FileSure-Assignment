@@ -69,15 +69,17 @@ export const register = async (req: Request, res: Response) => {
       createDoc.referredBy = referredByQuery as string; // force present-only
     }
 
-    const userDocs = (await User.create([createDoc], { session })) as any[];
+    // ✅ FIX: add ordered:true when using array + session
+    const userDocs = (await User.create([createDoc], { session, ordered: true })) as any[];
 
     // Handle referral if exists
     if (referredByQuery) {
       const referrer = await User.findOne({ referralCode: referredByQuery }).session(session);
       if (referrer && String(referrer._id) !== String(userDocs[0]._id)) {
+        // ✅ FIX: add ordered:true here too
         await Referral.create(
           [{ referrerId: referrer._id, referredId: userDocs[0]._id, status: "pending" }],
-          { session }
+          { session, ordered: true }
         ).catch(() => {});
         console.log(`🎁 Referral recorded: ${referrer.name} → ${userDocs[0].name}`);
       } else {
