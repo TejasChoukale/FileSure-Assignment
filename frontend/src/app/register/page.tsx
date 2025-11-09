@@ -1,3 +1,7 @@
+// Tell Next.js: do NOT prerender this page at build time
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 "use client";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -21,19 +25,21 @@ export default function Register() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API}/api/auth/register${ref ? `?r=${ref}` : ""}`, {
+      // always include ?r= (encode to be safe)
+      const url = `${API}/api/auth/register?r=${encodeURIComponent(ref || "")}`;
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Registration failed");
+      if (!res.ok) throw new Error(data?.error || "Registration failed");
 
       alert("Registered successfully! Please login now.");
       router.push("/login");
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "Registration failed");
     } finally {
       setLoading(false);
     }
